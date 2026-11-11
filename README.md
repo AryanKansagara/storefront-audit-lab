@@ -4,7 +4,7 @@ A dependency-free, deterministic static analyzer for merchant storefront HTML. I
 
 This independent portfolio project is not affiliated with Shopify. The checked-in storefront is synthetic.
 
-## First slice
+## Capabilities
 
 - Document language, title, viewport, and main-landmark checks.
 - Missing image alternative text and dimensions.
@@ -13,6 +13,8 @@ This independent portfolio project is not affiliated with Shopify. The checked-i
 - Parser-blocking classic scripts in `head` that lack `async` or `defer`.
 - Strict UTF-8 input with a 1 MiB bound and deterministic JSON output.
 - Python 3.11/3.14 tests and CI.
+- Versioned, machine-readable rule metadata and explicit report schema versioning.
+- Auditable whole-rule suppressions that retain suppressed error/warning counts.
 
 Run the synthetic example:
 
@@ -20,7 +22,16 @@ Run the synthetic example:
 python -m storefront_audit.cli examples/synthetic_storefront.html
 ```
 
+Inspect the rule catalog or explicitly suppress a known rule:
+
+```bash
+python -m storefront_audit.cli --list-rules
+python -m storefront_audit.cli --suppress image-dimensions examples/synthetic_storefront.html
+```
+
 Exit status is `0` when there are no findings, `1` when findings exist, and argparse's `2` for invalid input or invocation. Findings are ordered by source line and rule so repeated runs over identical bytes are stable.
+
+Suppressions accept only IDs from `--list-rules`, apply to the entire input document, and are recorded in `suppressions` with severity totals in `suppressed_counts`; they are not invisible inline exceptions. A suppressed finding no longer contributes to the process exit status, so suppression configuration should be reviewed and version controlled with the consuming system.
 
 ## Scope and limitations
 
