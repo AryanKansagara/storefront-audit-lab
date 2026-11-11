@@ -4,6 +4,40 @@ from dataclasses import asdict, dataclass
 from html.parser import HTMLParser
 
 
+REPORT_SCHEMA_VERSION = 1
+RULE_CATALOG_VERSION = "2026-11-11"
+
+
+@dataclass(frozen=True)
+class Rule:
+    id: str
+    severity: str
+    summary: str
+
+
+RULES = {
+    rule.id: rule
+    for rule in (
+        Rule("blocking-script", "warning", "Head script may block HTML parsing."),
+        Rule("control-name", "error", "Form control lacks a statically resolvable accessible name."),
+        Rule("document-html", "error", "Document has no html element."),
+        Rule("document-language", "error", "HTML language is missing or empty."),
+        Rule("document-title", "error", "Document title is missing or empty."),
+        Rule("duplicate-id", "error", "An id value is used by more than one element."),
+        Rule("heading-order", "warning", "Heading levels skip a level."),
+        Rule("image-alt", "error", "Image has no alt attribute."),
+        Rule("image-dimensions", "warning", "Image lacks explicit width or height."),
+        Rule("main-landmark", "warning", "Document has no statically detectable main landmark."),
+        Rule("viewport", "warning", "Viewport metadata is missing or empty."),
+    )
+}
+
+
+def rule_catalog() -> list[dict[str, str]]:
+    """Return stable, machine-readable metadata for every implemented rule."""
+    return [asdict(RULES[rule_id]) for rule_id in sorted(RULES)]
+
+
 @dataclass(frozen=True)
 class Finding:
     rule: str
@@ -40,6 +74,8 @@ class _StorefrontParser(HTMLParser):
         self.has_title = False
 
     def _add(self, rule: str, severity: str, line: int, message: str) -> None:
+        if rule not in RULES or RULES[rule].severity != severity:
+            raise AssertionError(f"finding metadata does not match rule catalog: {rule}")
         self.findings.append(Finding(rule, severity, line, message))
 
     def handle_decl(self, decl: str) -> None:
@@ -145,10 +181,27 @@ def audit_html(document: str) -> list[Finding]:
     return parser.finish()
 
 
-def report(document: str, source: str) -> dict[str, object]:
-    findings = audit_html(document)
+def report(document: str, source: str, suppressions: frozenset[str] = frozenset()) -> dict[str, object]:
+    unknown = sorted(suppressions - RULES.keys())
+    if unknown:
+        raise ValueError(f"unknown suppression rule: {unknown[0]}")
+    all_findings = audit_html(document)
+    findings = [item for item in all_findings if item.rule not in suppressions]
+    suppressed = [item for item in all_findings if item.rule in suppressions]
     counts = {
         "errors": sum(item.severity == "error" for item in findings),
         "warnings": sum(item.severity == "warning" for item in findings),
     }
-    return {"source": source, "counts": counts, "findings": [asdict(item) for item in findings]}
+    suppressed_counts = {
+        "errors": sum(item.severity == "error" for item in suppressed),
+        "warnings": sum(item.severity == "warning" for item in suppressed),
+    }
+    return {
+        "schema_version": REPORT_SCHEMA_VERSION,
+        "rule_catalog_version": RULE_CATALOG_VERSION,
+        "source": source,
+        "suppressions": sorted(suppressions),
+        "counts": counts,
+        "suppressed_counts": suppressed_counts,
+        "findings": [asdict(item) for item in findings],
+    }

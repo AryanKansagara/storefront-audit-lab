@@ -5,7 +5,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from storefront_audit import audit_html
+from storefront_audit import audit_html, rule_catalog
+from storefront_audit.audit import RULES, report
 from storefront_audit.cli import MAX_BYTES, _read_html, main
 
 
@@ -45,6 +46,29 @@ class AuditTests(unittest.TestCase):
         document = CLEAN.replace('<script type="module" src="app.js"></script>', '<script src="app.js"></script>').replace("</h1>", "</h1><h3>Sale</h3>")
         self.assertEqual({item.rule for item in audit_html(document)}, {"blocking-script", "heading-order"})
 
+    def test_catalog_covers_findings_with_matching_severity(self):
+        findings = audit_html("<p id='same'><img id='same'><input><h1>A</h1><h3>B</h3>")
+        catalog = rule_catalog()
+        self.assertEqual([item["id"] for item in catalog], sorted(RULES))
+        self.assertEqual(len(catalog), len(RULES))
+        for finding in findings:
+            self.assertEqual(RULES[finding.rule].severity, finding.severity)
+
+    def test_report_suppression_is_explicit_and_counted(self):
+        document = CLEAN.replace(' alt="Blue mug" width="400" height="300"', "")
+        result = report(document, "shop.html", frozenset({"image-alt"}))
+        self.assertEqual(result["suppressions"], ["image-alt"])
+        self.assertEqual(result["counts"], {"errors": 0, "warnings": 1})
+        self.assertEqual(result["suppressed_counts"], {"errors": 1, "warnings": 0})
+        findings = result["findings"]
+        self.assertIsInstance(findings, list)
+        assert isinstance(findings, list)
+        self.assertEqual([item["rule"] for item in findings], ["image-dimensions"])
+
+    def test_report_rejects_unknown_suppression(self):
+        with self.assertRaisesRegex(ValueError, "unknown suppression rule"):
+            report(CLEAN, "shop.html", frozenset({"not-a-rule"}))
+
     def test_cli_output_is_deterministic_and_finding_exit_is_one(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "shop.html"
@@ -57,6 +81,22 @@ class AuditTests(unittest.TestCase):
                 outputs.append(stream.getvalue())
             self.assertEqual(outputs[0], outputs[1])
             self.assertEqual(json.loads(outputs[0])["counts"]["errors"], 1)
+
+    def test_cli_lists_rules_and_suppression_changes_exit_status(self):
+        stream = io.StringIO()
+        with contextlib.redirect_stdout(stream):
+            self.assertEqual(main(["--list-rules"]), 0)
+        catalog = json.loads(stream.getvalue())
+        self.assertEqual(len(catalog["rules"]), len(RULES))
+
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "shop.html"
+            path.write_text(CLEAN.replace(' alt="Blue mug"', ""), encoding="utf-8")
+            stream = io.StringIO()
+            with contextlib.redirect_stdout(stream):
+                self.assertEqual(main(["--suppress", "image-alt", str(path)]), 0)
+            result = json.loads(stream.getvalue())
+            self.assertEqual(result["suppressed_counts"]["errors"], 1)
 
     def test_reader_rejects_invalid_utf8_and_nul(self):
         with tempfile.TemporaryDirectory() as directory:
