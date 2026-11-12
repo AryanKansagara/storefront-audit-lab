@@ -14,7 +14,8 @@ CLEAN = """<!doctype html><html lang="en"><head><title>Demo shop</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <script type="module" src="app.js"></script></head><body><main><h1>Catalog</h1>
 <img src="item.jpg" alt="Blue mug" width="400" height="300">
-<label for="quantity">Quantity</label><input id="quantity"></main></body></html>"""
+<label for="quantity">Quantity</label><input id="quantity">
+<a href="/catalog">Browse catalog</a><button aria-label="Open cart"></button></main></body></html>"""
 
 
 class AuditTests(unittest.TestCase):
@@ -41,6 +42,27 @@ class AuditTests(unittest.TestCase):
     def test_broken_aria_reference_does_not_name_control(self):
         findings = audit_html(CLEAN.replace('<label for="quantity">Quantity</label><input id="quantity">', '<input aria-labelledby="missing">'))
         self.assertIn("control-name", {item.rule for item in findings})
+
+    def test_links_and_buttons_require_static_names(self):
+        document = CLEAN.replace(
+            '<a href="/catalog">Browse catalog</a><button aria-label="Open cart"></button>',
+            '<a href="/catalog"></a><button></button>',
+        )
+        findings = [item for item in audit_html(document) if item.rule == "interactive-name"]
+        self.assertEqual([item.message.split()[0] for item in findings], ["a", "button"])
+
+    def test_interactive_names_accept_content_image_alt_and_valid_aria_reference(self):
+        document = CLEAN.replace(
+            '<a href="/catalog">Browse catalog</a><button aria-label="Open cart"></button>',
+            '<span id="account-name">Account</span>'
+            '<a href="/account" aria-labelledby="account-name"></a>'
+            '<button><img src="cart.svg" alt="Open cart" width="20" height="20"></button>',
+        )
+        self.assertNotIn("interactive-name", {item.rule for item in audit_html(document)})
+
+    def test_anchor_without_href_is_not_treated_as_interactive(self):
+        document = CLEAN.replace('<a href="/catalog">Browse catalog</a>', '<a></a>')
+        self.assertNotIn("interactive-name", {item.rule for item in audit_html(document)})
 
     def test_heading_jump_and_blocking_script(self):
         document = CLEAN.replace('<script type="module" src="app.js"></script>', '<script src="app.js"></script>').replace("</h1>", "</h1><h3>Sale</h3>")

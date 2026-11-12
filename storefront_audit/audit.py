@@ -5,7 +5,7 @@ from html.parser import HTMLParser
 
 
 REPORT_SCHEMA_VERSION = 1
-RULE_CATALOG_VERSION = "2026-11-11"
+RULE_CATALOG_VERSION = "2026-11-12"
 
 
 @dataclass(frozen=True)
@@ -27,6 +27,7 @@ RULES = {
         Rule("heading-order", "warning", "Heading levels skip a level."),
         Rule("image-alt", "error", "Image has no alt attribute."),
         Rule("image-dimensions", "warning", "Image lacks explicit width or height."),
+        Rule("interactive-name", "error", "Link or button lacks a statically resolvable accessible name."),
         Rule("main-landmark", "warning", "Document has no statically detectable main landmark."),
         Rule("viewport", "warning", "Viewport metadata is missing or empty."),
     )
@@ -55,6 +56,15 @@ class _Control:
     directly_named: bool
 
 
+@dataclass
+class _Interactive:
+    line: int
+    element: str
+    aria_labelledby: tuple[str, ...]
+    directly_named: bool
+    text: list[str]
+
+
 class _StorefrontParser(HTMLParser):
     def __init__(self) -> None:
         super().__init__(convert_charrefs=True)
@@ -62,6 +72,8 @@ class _StorefrontParser(HTMLParser):
         self.ids: dict[str, int] = {}
         self.labels_for: set[str] = set()
         self.controls: list[_Control] = []
+        self.interactives: list[_Interactive] = []
+        self.active_interactives: list[_Interactive] = []
         self.headings: list[tuple[int, int]] = []
         self.seen_html = False
         self.has_lang = False
@@ -118,6 +130,9 @@ class _StorefrontParser(HTMLParser):
                 self._add("image-alt", "error", line, "image is missing an alt attribute")
             if not values.get("width") or not values.get("height"):
                 self._add("image-dimensions", "warning", line, "image is missing explicit width or height")
+            if (values.get("alt") or "").strip():
+                for interactive in self.active_interactives:
+                    interactive.text.append(values["alt"] or "")
         elif tag == "script" and self.in_head and not any(key in values for key in ("async", "defer")) and (values.get("type") or "").lower() != "module":
             self._add("blocking-script", "warning", line, "head script lacks async, defer, or type=module")
 
@@ -127,6 +142,13 @@ class _StorefrontParser(HTMLParser):
                 labelledby = tuple(part for part in (values.get("aria-labelledby") or "").split() if part)
                 directly_named = self.label_depth > 0 or bool((values.get("aria-label") or "").strip())
                 self.controls.append(_Control(line, tag, element_id, labelledby, directly_named))
+
+        if tag == "button" or (tag == "a" and "href" in values):
+            labelledby = tuple(part for part in (values.get("aria-labelledby") or "").split() if part)
+            directly_named = bool((values.get("aria-label") or "").strip() or (values.get("title") or "").strip())
+            interactive = _Interactive(line, tag, labelledby, directly_named, [])
+            self.interactives.append(interactive)
+            self.active_interactives.append(interactive)
 
         if len(tag) == 2 and tag[0] == "h" and tag[1] in "123456":
             self.headings.append((int(tag[1]), line))
@@ -141,10 +163,18 @@ class _StorefrontParser(HTMLParser):
             self.title_depth -= 1
             if "".join(self.title_text).strip():
                 self.has_title = True
+        if tag in {"a", "button"}:
+            for index in range(len(self.active_interactives) - 1, -1, -1):
+                if self.active_interactives[index].element == tag:
+                    del self.active_interactives[index]
+                    break
 
     def handle_data(self, data: str) -> None:
         if self.title_depth:
             self.title_text.append(data)
+        if data.strip():
+            for interactive in self.active_interactives:
+                interactive.text.append(data)
 
     def finish(self) -> list[Finding]:
         if not self.seen_html:
@@ -163,6 +193,12 @@ class _StorefrontParser(HTMLParser):
             named_by_aria = bool(control.aria_labelledby) and all(ref in self.ids for ref in control.aria_labelledby)
             if not (control.directly_named or named_by_for or named_by_aria):
                 self._add("control-name", "error", control.line, f"{control.element} has no statically resolvable accessible name")
+
+        for interactive in self.interactives:
+            named_by_aria = bool(interactive.aria_labelledby) and all(ref in self.ids for ref in interactive.aria_labelledby)
+            named_by_content = bool("".join(interactive.text).strip())
+            if not (interactive.directly_named or named_by_aria or named_by_content):
+                self._add("interactive-name", "error", interactive.line, f"{interactive.element} has no statically resolvable accessible name")
 
         previous_level: int | None = None
         for level, line in self.headings:
