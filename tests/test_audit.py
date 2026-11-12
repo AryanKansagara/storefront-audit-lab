@@ -64,6 +64,30 @@ class AuditTests(unittest.TestCase):
         document = CLEAN.replace('<a href="/catalog">Browse catalog</a>', '<a></a>')
         self.assertNotIn("interactive-name", {item.rule for item in audit_html(document)})
 
+    def test_placeholder_and_script_link_destinations_are_reported(self):
+        document = CLEAN.replace(
+            '<a href="/catalog">Browse catalog</a>',
+            '<a href=" ">Empty</a>\n<a href="#">Placeholder</a>\n'
+            '<a href=" JAVA\tSCRIPT&#58;alert(1)">Script</a>',
+        )
+        findings = [item for item in audit_html(document) if item.rule == "link-destination"]
+        self.assertEqual(
+            [item.message for item in findings],
+            [
+                "link destination is empty",
+                "link destination is a fragment-only placeholder",
+                "link destination uses the javascript scheme",
+            ],
+        )
+
+    def test_static_link_destination_check_accepts_common_destinations(self):
+        document = CLEAN.replace(
+            '<a href="/catalog">Browse catalog</a>',
+            '<a href="/catalog">Catalog</a><a href="#details">Details</a>'
+            '<a href="mailto:help@example.test">Help</a>',
+        )
+        self.assertNotIn("link-destination", {item.rule for item in audit_html(document)})
+
     def test_heading_jump_and_blocking_script(self):
         document = CLEAN.replace('<script type="module" src="app.js"></script>', '<script src="app.js"></script>').replace("</h1>", "</h1><h3>Sale</h3>")
         self.assertEqual({item.rule for item in audit_html(document)}, {"blocking-script", "heading-order"})
