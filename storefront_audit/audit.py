@@ -28,6 +28,7 @@ RULES = {
         Rule("image-alt", "error", "Image has no alt attribute."),
         Rule("image-dimensions", "warning", "Image lacks explicit width or height."),
         Rule("interactive-name", "error", "Link or button lacks a statically resolvable accessible name."),
+        Rule("link-destination", "warning", "Link uses an empty, placeholder, or script-executing destination."),
         Rule("main-landmark", "warning", "Document has no statically detectable main landmark."),
         Rule("viewport", "warning", "Viewport metadata is missing or empty."),
     )
@@ -149,6 +150,16 @@ class _StorefrontParser(HTMLParser):
             interactive = _Interactive(line, tag, labelledby, directly_named, [])
             self.interactives.append(interactive)
             self.active_interactives.append(interactive)
+
+        if tag == "a" and "href" in values:
+            destination = (values.get("href") or "").strip()
+            normalized_destination = destination.translate({ord("\t"): None, ord("\n"): None, ord("\r"): None}).casefold()
+            if not destination:
+                self._add("link-destination", "warning", line, "link destination is empty")
+            elif destination == "#":
+                self._add("link-destination", "warning", line, "link destination is a fragment-only placeholder")
+            elif normalized_destination.startswith("javascript:"):
+                self._add("link-destination", "warning", line, "link destination uses the javascript scheme")
 
         if len(tag) == 2 and tag[0] == "h" and tag[1] in "123456":
             self.headings.append((int(tag[1]), line))
