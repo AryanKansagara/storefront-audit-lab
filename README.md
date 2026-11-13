@@ -8,7 +8,7 @@ This independent portfolio project is not affiliated with Shopify. The checked-i
 
 - Document language, title, viewport, and main-landmark checks.
 - Missing image alternative text and dimensions.
-- Duplicate IDs and statically resolvable form-control names (`label`, `aria-label`, and valid `aria-labelledby`).
+- Duplicate IDs, bounded multiple-explicit-label diagnostics, and statically resolvable form-control names (`label`, `aria-label`, and valid `aria-labelledby`).
 - Statically resolvable names for links and buttons from text/image alternatives, ARIA, or `title`.
 - Empty, fragment-only placeholder, and `javascript:` link destinations.
 - Heading-level jumps.
@@ -38,6 +38,6 @@ Suppressions accept only IDs from `--list-rules`, apply to the entire input docu
 
 ## Scope and limitations
 
-This is a static heuristic audit, not a browser, accessibility conformance certification, Lighthouse replacement, Core Web Vitals measurement, or production release gate. It does not compute an accessibility score, execute JavaScript, resolve CSS, apply the full browser accessible-name algorithm, inspect rendered names, test keyboard behavior, follow URLs, measure network timing, or represent people using assistive technology. Static link/button checks cannot account for CSS-hidden text, dynamic content, every ARIA relationship, router-specific placeholders, or the safety and availability of destination content. The link-destination rule deliberately recognizes only three high-signal static patterns; it does not validate general URLs. Empty `alt` text is permitted because it can intentionally mark a decorative image. A valid static report can still miss serious rendered-page issues, and warnings require human review.
+This is a static heuristic audit, not a browser, accessibility conformance certification, Lighthouse replacement, Core Web Vitals measurement, or production release gate. It does not compute an accessibility score, execute JavaScript, resolve CSS, apply the full browser accessible-name algorithm, inspect rendered names, test keyboard behavior, follow URLs, measure network timing, or represent people using assistive technology. Static link/button checks cannot account for CSS-hidden text, dynamic content, every ARIA relationship, router-specific placeholders, or the safety and availability of destination content. The link-destination rule deliberately recognizes only three high-signal static patterns; it does not validate general URLs. The duplicate-label warning reports at most one finding per audited `input`, `select`, or `textarea` ID with multiple explicit `label[for]` elements; multiple labels can be intentional, so the diagnostic requires human review and does not compare rendered label text. Empty `alt` text is permitted because it can intentionally mark a decorative image. A valid static report can still miss serious rendered-page issues, and warnings require human review.
 
 Only audit storefronts you are authorized to inspect. The tool performs no network access and the repository contains no merchant or customer data.
