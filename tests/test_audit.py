@@ -43,6 +43,27 @@ class AuditTests(unittest.TestCase):
         findings = audit_html(CLEAN.replace('<label for="quantity">Quantity</label><input id="quantity">', '<input aria-labelledby="missing">'))
         self.assertIn("control-name", {item.rule for item in findings})
 
+    def test_multiple_explicit_labels_produce_one_bounded_diagnostic(self):
+        document = CLEAN.replace(
+            '<label for="quantity">Quantity</label><input id="quantity">',
+            '<label for="quantity">Quantity</label>\n'
+            '<label for="quantity">Item quantity</label>\n'
+            '<label for="quantity">Count</label><input id="quantity">',
+        )
+        findings = [item for item in audit_html(document) if item.rule == "duplicate-label"]
+        self.assertEqual(len(findings), 1)
+        self.assertEqual(findings[0].line, 6)
+        self.assertEqual(findings[0].message, "control id 'quantity' has 3 explicit labels")
+
+    def test_duplicate_label_check_ignores_distinct_and_missing_targets(self):
+        document = CLEAN.replace(
+            '<label for="quantity">Quantity</label><input id="quantity">',
+            '<label for="quantity">Quantity</label><input id="quantity">'
+            '<label for="notes">Notes</label><textarea id="notes"></textarea>'
+            '<label for="missing">First orphan</label><label for="missing">Second orphan</label>',
+        )
+        self.assertNotIn("duplicate-label", {item.rule for item in audit_html(document)})
+
     def test_links_and_buttons_require_static_names(self):
         document = CLEAN.replace(
             '<a href="/catalog">Browse catalog</a><button aria-label="Open cart"></button>',

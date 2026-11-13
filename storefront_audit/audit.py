@@ -5,7 +5,7 @@ from html.parser import HTMLParser
 
 
 REPORT_SCHEMA_VERSION = 2
-RULE_CATALOG_VERSION = "2026-11-12"
+RULE_CATALOG_VERSION = "2026-11-13"
 
 
 @dataclass(frozen=True)
@@ -24,6 +24,7 @@ RULES = {
         Rule("document-language", "error", "HTML language is missing or empty."),
         Rule("document-title", "error", "Document title is missing or empty."),
         Rule("duplicate-id", "error", "An id value is used by more than one element."),
+        Rule("duplicate-label", "warning", "Form control has multiple explicit labels."),
         Rule("heading-order", "warning", "Heading levels skip a level."),
         Rule("image-alt", "error", "Image has no alt attribute."),
         Rule("image-dimensions", "warning", "Image lacks explicit width or height."),
@@ -71,7 +72,8 @@ class _StorefrontParser(HTMLParser):
         super().__init__(convert_charrefs=True)
         self.findings: list[Finding] = []
         self.ids: dict[str, int] = {}
-        self.labels_for: set[str] = set()
+        self.label_lines_for: dict[str, list[int]] = {}
+        self.control_ids: set[str] = set()
         self.controls: list[_Control] = []
         self.interactives: list[_Interactive] = []
         self.active_interactives: list[_Interactive] = []
@@ -125,7 +127,8 @@ class _StorefrontParser(HTMLParser):
         elif tag == "label":
             self.label_depth += 1
             if values.get("for"):
-                self.labels_for.add(values["for"] or "")
+                target = values["for"] or ""
+                self.label_lines_for.setdefault(target, []).append(line)
         elif tag == "img":
             if "alt" not in values:
                 self._add("image-alt", "error", line, "image is missing an alt attribute")
@@ -143,6 +146,8 @@ class _StorefrontParser(HTMLParser):
                 labelledby = tuple(part for part in (values.get("aria-labelledby") or "").split() if part)
                 directly_named = self.label_depth > 0 or bool((values.get("aria-label") or "").strip())
                 self.controls.append(_Control(line, tag, element_id, labelledby, directly_named))
+                if element_id:
+                    self.control_ids.add(element_id)
 
         if tag == "button" or (tag == "a" and "href" in values):
             labelledby = tuple(part for part in (values.get("aria-labelledby") or "").split() if part)
@@ -200,10 +205,20 @@ class _StorefrontParser(HTMLParser):
             self._add("main-landmark", "warning", 1, "document has no main element or role=main landmark")
 
         for control in self.controls:
-            named_by_for = bool(control.control_id and control.control_id in self.labels_for)
+            named_by_for = bool(control.control_id and control.control_id in self.label_lines_for)
             named_by_aria = bool(control.aria_labelledby) and all(ref in self.ids for ref in control.aria_labelledby)
             if not (control.directly_named or named_by_for or named_by_aria):
                 self._add("control-name", "error", control.line, f"{control.element} has no statically resolvable accessible name")
+
+        for target in sorted(self.control_ids):
+            label_lines = self.label_lines_for.get(target, [])
+            if len(label_lines) > 1:
+                self._add(
+                    "duplicate-label",
+                    "warning",
+                    label_lines[1],
+                    f"control id {target!r} has {len(label_lines)} explicit labels",
+                )
 
         for interactive in self.interactives:
             named_by_aria = bool(interactive.aria_labelledby) and all(ref in self.ids for ref in interactive.aria_labelledby)
