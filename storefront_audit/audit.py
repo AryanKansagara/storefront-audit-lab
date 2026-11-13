@@ -4,7 +4,7 @@ from dataclasses import asdict, dataclass
 from html.parser import HTMLParser
 
 
-REPORT_SCHEMA_VERSION = 1
+REPORT_SCHEMA_VERSION = 2
 RULE_CATALOG_VERSION = "2026-11-12"
 
 
@@ -243,6 +243,12 @@ def report(document: str, source: str, suppressions: frozenset[str] = frozenset(
         "errors": sum(item.severity == "error" for item in suppressed),
         "warnings": sum(item.severity == "warning" for item in suppressed),
     }
+    rule_counts = {rule_id: 0 for rule_id in sorted(RULES)}
+    suppressed_rule_counts = {rule_id: 0 for rule_id in sorted(RULES)}
+    for item in findings:
+        rule_counts[item.rule] += 1
+    for item in suppressed:
+        suppressed_rule_counts[item.rule] += 1
     return {
         "schema_version": REPORT_SCHEMA_VERSION,
         "rule_catalog_version": RULE_CATALOG_VERSION,
@@ -250,5 +256,7 @@ def report(document: str, source: str, suppressions: frozenset[str] = frozenset(
         "suppressions": sorted(suppressions),
         "counts": counts,
         "suppressed_counts": suppressed_counts,
+        "rule_counts": rule_counts,
+        "suppressed_rule_counts": suppressed_rule_counts,
         "findings": [asdict(item) for item in findings],
     }

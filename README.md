@@ -17,6 +17,7 @@ This independent portfolio project is not affiliated with Shopify. The checked-i
 - Python 3.11/3.14 tests and CI.
 - Versioned, machine-readable rule metadata and explicit report schema versioning.
 - Auditable whole-rule suppressions that retain suppressed error/warning counts.
+- Stable zero-complete per-rule counts for both visible and suppressed findings, alongside severity totals.
 
 Run the synthetic example:
 
@@ -33,7 +34,7 @@ python -m storefront_audit.cli --suppress image-dimensions examples/synthetic_st
 
 Exit status is `0` when there are no findings, `1` when findings exist, and argparse's `2` for invalid input or invocation. Findings are ordered by source line and rule so repeated runs over identical bytes are stable.
 
-Suppressions accept only IDs from `--list-rules`, apply to the entire input document, and are recorded in `suppressions` with severity totals in `suppressed_counts`; they are not invisible inline exceptions. A suppressed finding no longer contributes to the process exit status, so suppression configuration should be reviewed and version controlled with the consuming system.
+Suppressions accept only IDs from `--list-rules`, apply to the entire input document, and are recorded in `suppressions` with severity totals in `suppressed_counts`; they are not invisible inline exceptions. Reports also include catalog-bounded `rule_counts` and `suppressed_rule_counts` maps. Every known rule is present even when its count is zero, so consumers can compare deterministic summaries without reconstructing counts from findings or treating a missing key as zero. A suppressed finding no longer contributes to the process exit status, so suppression configuration should be reviewed and version controlled with the consuming system.
 
 ## Scope and limitations
 

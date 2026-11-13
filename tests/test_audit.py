@@ -106,6 +106,20 @@ class AuditTests(unittest.TestCase):
         self.assertEqual(result["suppressions"], ["image-alt"])
         self.assertEqual(result["counts"], {"errors": 0, "warnings": 1})
         self.assertEqual(result["suppressed_counts"], {"errors": 1, "warnings": 0})
+        rule_counts = result["rule_counts"]
+        suppressed_rule_counts = result["suppressed_rule_counts"]
+        self.assertIsInstance(rule_counts, dict)
+        self.assertIsInstance(suppressed_rule_counts, dict)
+        assert isinstance(rule_counts, dict)
+        assert isinstance(suppressed_rule_counts, dict)
+        self.assertEqual(list(rule_counts), sorted(RULES))
+        self.assertEqual(set(rule_counts), set(RULES))
+        self.assertEqual(rule_counts["image-alt"], 0)
+        self.assertEqual(rule_counts["image-dimensions"], 1)
+        self.assertEqual(suppressed_rule_counts["image-alt"], 1)
+        self.assertEqual(suppressed_rule_counts["image-dimensions"], 0)
+        self.assertEqual(sum(rule_counts.values()), 1)
+        self.assertEqual(sum(suppressed_rule_counts.values()), 1)
         findings = result["findings"]
         self.assertIsInstance(findings, list)
         assert isinstance(findings, list)
@@ -114,6 +128,12 @@ class AuditTests(unittest.TestCase):
     def test_report_rejects_unknown_suppression(self):
         with self.assertRaisesRegex(ValueError, "unknown suppression rule"):
             report(CLEAN, "shop.html", frozenset({"not-a-rule"}))
+
+    def test_clean_report_has_stable_zero_complete_rule_counts(self):
+        result = report(CLEAN, "shop.html")
+        self.assertEqual(result["schema_version"], 2)
+        self.assertEqual(result["rule_counts"], {rule_id: 0 for rule_id in sorted(RULES)})
+        self.assertEqual(result["suppressed_rule_counts"], {rule_id: 0 for rule_id in sorted(RULES)})
 
     def test_cli_output_is_deterministic_and_finding_exit_is_one(self):
         with tempfile.TemporaryDirectory() as directory:
