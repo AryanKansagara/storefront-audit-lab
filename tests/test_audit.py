@@ -85,6 +85,30 @@ class AuditTests(unittest.TestCase):
         document = CLEAN.replace('<a href="/catalog">Browse catalog</a>', '<a></a>')
         self.assertNotIn("interactive-name", {item.rule for item in audit_html(document)})
 
+    def test_form_buttons_require_an_explicit_valid_type(self):
+        document = CLEAN.replace(
+            '<button aria-label="Open cart"></button>',
+            '<form><button aria-label="Add item"></button>\n'
+            '<button type="invalid">Continue</button></form>',
+        )
+        findings = [item for item in audit_html(document) if item.rule == "form-button-type"]
+        self.assertEqual(
+            [item.message for item in findings],
+            [
+                "button in form is missing an explicit type",
+                "button in form has invalid type 'invalid'",
+            ],
+        )
+
+    def test_valid_form_button_types_and_buttons_outside_forms_are_accepted(self):
+        document = CLEAN.replace(
+            '<button aria-label="Open cart"></button>',
+            '<form><button type="SUBMIT">Add item</button>'
+            '<button type="button">Preview</button><button type="reset">Clear</button></form>'
+            '<button>Outside form</button>',
+        )
+        self.assertNotIn("form-button-type", {item.rule for item in audit_html(document)})
+
     def test_placeholder_and_script_link_destinations_are_reported(self):
         document = CLEAN.replace(
             '<a href="/catalog">Browse catalog</a>',
