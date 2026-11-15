@@ -5,7 +5,7 @@ from html.parser import HTMLParser
 
 
 REPORT_SCHEMA_VERSION = 2
-RULE_CATALOG_VERSION = "2026-11-13"
+RULE_CATALOG_VERSION = "2026-11-15"
 
 
 @dataclass(frozen=True)
@@ -25,6 +25,7 @@ RULES = {
         Rule("document-title", "error", "Document title is missing or empty."),
         Rule("duplicate-id", "error", "An id value is used by more than one element."),
         Rule("duplicate-label", "warning", "Form control has multiple explicit labels."),
+        Rule("form-button-type", "warning", "Button in a form lacks a valid explicit type."),
         Rule("heading-order", "warning", "Heading levels skip a level."),
         Rule("image-alt", "error", "Image has no alt attribute."),
         Rule("image-dimensions", "warning", "Image lacks explicit width or height."),
@@ -83,6 +84,7 @@ class _StorefrontParser(HTMLParser):
         self.has_viewport = False
         self.has_main = False
         self.in_head = 0
+        self.form_depth = 0
         self.label_depth = 0
         self.title_depth = 0
         self.title_text: list[str] = []
@@ -124,6 +126,8 @@ class _StorefrontParser(HTMLParser):
             self.has_viewport = bool((values.get("content") or "").strip())
         elif tag == "main" or values.get("role") == "main":
             self.has_main = True
+        elif tag == "form":
+            self.form_depth += 1
         elif tag == "label":
             self.label_depth += 1
             if values.get("for"):
@@ -156,6 +160,16 @@ class _StorefrontParser(HTMLParser):
             self.interactives.append(interactive)
             self.active_interactives.append(interactive)
 
+        if tag == "button" and self.form_depth:
+            button_type = (values.get("type") or "").lower()
+            if button_type not in {"button", "reset", "submit"}:
+                message = (
+                    "button in form is missing an explicit type"
+                    if not button_type
+                    else f"button in form has invalid type {button_type!r}"
+                )
+                self._add("form-button-type", "warning", line, message)
+
         if tag == "a" and "href" in values:
             destination = (values.get("href") or "").strip()
             normalized_destination = destination.translate({ord("\t"): None, ord("\n"): None, ord("\r"): None}).casefold()
@@ -173,6 +187,8 @@ class _StorefrontParser(HTMLParser):
         tag = tag.lower()
         if tag == "head" and self.in_head:
             self.in_head -= 1
+        elif tag == "form" and self.form_depth:
+            self.form_depth -= 1
         elif tag == "label" and self.label_depth:
             self.label_depth -= 1
         elif tag == "title" and self.title_depth:
