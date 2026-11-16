@@ -5,7 +5,7 @@ from html.parser import HTMLParser
 
 
 REPORT_SCHEMA_VERSION = 2
-RULE_CATALOG_VERSION = "2026-11-15"
+RULE_CATALOG_VERSION = "2026-11-16"
 
 
 @dataclass(frozen=True)
@@ -32,6 +32,7 @@ RULES = {
         Rule("interactive-name", "error", "Link or button lacks a statically resolvable accessible name."),
         Rule("link-destination", "warning", "Link uses an empty, placeholder, or script-executing destination."),
         Rule("main-landmark", "warning", "Document has no statically detectable main landmark."),
+        Rule("multiple-main-landmarks", "warning", "Document has multiple statically detectable main landmarks."),
         Rule("viewport", "warning", "Viewport metadata is missing or empty."),
     )
 }
@@ -82,7 +83,7 @@ class _StorefrontParser(HTMLParser):
         self.seen_html = False
         self.has_lang = False
         self.has_viewport = False
-        self.has_main = False
+        self.main_landmark_lines: list[int] = []
         self.in_head = 0
         self.form_depth = 0
         self.label_depth = 0
@@ -124,8 +125,8 @@ class _StorefrontParser(HTMLParser):
             self.title_depth += 1
         elif tag == "meta" and (values.get("name") or "").lower() == "viewport":
             self.has_viewport = bool((values.get("content") or "").strip())
-        elif tag == "main" or values.get("role") == "main":
-            self.has_main = True
+        elif tag == "main" or (values.get("role") or "").strip().casefold() == "main":
+            self.main_landmark_lines.append(line)
         elif tag == "form":
             self.form_depth += 1
         elif tag == "label":
@@ -217,8 +218,15 @@ class _StorefrontParser(HTMLParser):
             self._add("document-title", "error", 1, "document is missing a non-empty title")
         if not self.has_viewport:
             self._add("viewport", "warning", 1, "document is missing a non-empty viewport meta tag")
-        if not self.has_main:
+        if not self.main_landmark_lines:
             self._add("main-landmark", "warning", 1, "document has no main element or role=main landmark")
+        elif len(self.main_landmark_lines) > 1:
+            self._add(
+                "multiple-main-landmarks",
+                "warning",
+                self.main_landmark_lines[1],
+                f"document has {len(self.main_landmark_lines)} main landmarks",
+            )
 
         for control in self.controls:
             named_by_for = bool(control.control_id and control.control_id in self.label_lines_for)
