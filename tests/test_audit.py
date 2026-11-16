@@ -26,6 +26,22 @@ class AuditTests(unittest.TestCase):
         rules = {finding.rule for finding in audit_html("<html><head></head><body></body></html>")}
         self.assertEqual(rules, {"document-language", "document-title", "main-landmark", "viewport"})
 
+    def test_multiple_main_landmarks_produce_one_bounded_diagnostic(self):
+        document = CLEAN.replace(
+            "</main>",
+            '</main>\n<section role=" MAIN ">Secondary</section>\n<main>Third</main>',
+        )
+        findings = [item for item in audit_html(document) if item.rule == "multiple-main-landmarks"]
+        self.assertEqual(len(findings), 1)
+        self.assertEqual(findings[0].line, 7)
+        self.assertEqual(findings[0].message, "document has 3 main landmarks")
+
+    def test_one_role_main_landmark_is_accepted_case_insensitively(self):
+        document = CLEAN.replace("<main>", '<section role="MAIN">').replace("</main>", "</section>")
+        rules = {item.rule for item in audit_html(document)}
+        self.assertNotIn("main-landmark", rules)
+        self.assertNotIn("multiple-main-landmarks", rules)
+
     def test_image_alt_and_dimensions_are_distinct(self):
         findings = audit_html(CLEAN.replace('alt="Blue mug" width="400" height="300"', ""))
         self.assertEqual([item.rule for item in findings], ["image-alt", "image-dimensions"])
