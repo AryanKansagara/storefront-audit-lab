@@ -5,7 +5,7 @@ from html.parser import HTMLParser
 
 
 REPORT_SCHEMA_VERSION = 2
-RULE_CATALOG_VERSION = "2026-11-16"
+RULE_CATALOG_VERSION = "2026-11-17"
 
 
 @dataclass(frozen=True)
@@ -23,6 +23,7 @@ RULES = {
         Rule("document-html", "error", "Document has no html element."),
         Rule("document-language", "error", "HTML language is missing or empty."),
         Rule("document-title", "error", "Document title is missing or empty."),
+        Rule("duplicate-attribute", "warning", "An element repeats an HTML attribute name."),
         Rule("duplicate-id", "error", "An id value is used by more than one element."),
         Rule("duplicate-label", "warning", "Form control has multiple explicit labels."),
         Rule("form-button-type", "warning", "Button in a form lacks a valid explicit type."),
@@ -107,6 +108,21 @@ class _StorefrontParser(HTMLParser):
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         tag = tag.lower()
         line = self.getpos()[0]
+        seen_attributes: set[str] = set()
+        duplicate_attributes: set[str] = set()
+        for key, _ in attrs:
+            normalized_key = key.casefold()
+            if normalized_key in seen_attributes:
+                duplicate_attributes.add(normalized_key)
+            seen_attributes.add(normalized_key)
+        if duplicate_attributes:
+            names = ", ".join(repr(name) for name in sorted(duplicate_attributes))
+            self._add(
+                "duplicate-attribute",
+                "warning",
+                line,
+                f"{tag} element repeats attribute name(s): {names}",
+            )
         values = {key.lower(): value for key, value in attrs}
 
         element_id = values.get("id")
