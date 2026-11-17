@@ -51,6 +51,22 @@ class AuditTests(unittest.TestCase):
         duplicate = next(item for item in findings if item.rule == "duplicate-id")
         self.assertIn("first used on line", duplicate.message)
 
+    def test_duplicate_attributes_produce_one_bounded_diagnostic_per_element(self):
+        document = CLEAN.replace(
+            "<main>",
+            '<main class="catalog" CLASS="featured" data-mode="grid" data-mode="list">',
+        )
+        findings = [item for item in audit_html(document) if item.rule == "duplicate-attribute"]
+        self.assertEqual(len(findings), 1)
+        self.assertEqual(findings[0].line, 3)
+        self.assertEqual(
+            findings[0].message,
+            "main element repeats attribute name(s): 'class', 'data-mode'",
+        )
+
+    def test_distinct_attributes_do_not_trigger_duplicate_attribute_rule(self):
+        self.assertNotIn("duplicate-attribute", {item.rule for item in audit_html(CLEAN)})
+
     def test_controls_accept_wrapping_label_and_valid_aria_reference(self):
         document = CLEAN.replace('<label for="quantity">Quantity</label><input id="quantity">', '<label>Quantity<input></label><span id="search-name">Search</span><input aria-labelledby="search-name">')
         self.assertNotIn("control-name", {item.rule for item in audit_html(document)})
