@@ -5,7 +5,7 @@ from html.parser import HTMLParser
 
 
 REPORT_SCHEMA_VERSION = 2
-RULE_CATALOG_VERSION = "2026-11-17"
+RULE_CATALOG_VERSION = "2026-11-19"
 
 
 @dataclass(frozen=True)
@@ -18,6 +18,7 @@ class Rule:
 RULES = {
     rule.id: rule
     for rule in (
+        Rule("aria-reference", "warning", "ARIA labelled-by references do not resolve to one unique element."),
         Rule("blocking-script", "warning", "Head script may block HTML parsing."),
         Rule("control-name", "error", "Form control lacks a statically resolvable accessible name."),
         Rule("document-html", "error", "Document has no html element."),
@@ -70,16 +71,25 @@ class _Interactive:
     text: list[str]
 
 
+@dataclass(frozen=True)
+class _AriaReference:
+    line: int
+    element: str
+    ids: tuple[str, ...]
+
+
 class _StorefrontParser(HTMLParser):
     def __init__(self) -> None:
         super().__init__(convert_charrefs=True)
         self.findings: list[Finding] = []
         self.ids: dict[str, int] = {}
+        self.id_counts: dict[str, int] = {}
         self.label_lines_for: dict[str, list[int]] = {}
         self.control_ids: set[str] = set()
         self.controls: list[_Control] = []
         self.interactives: list[_Interactive] = []
         self.active_interactives: list[_Interactive] = []
+        self.aria_references: list[_AriaReference] = []
         self.headings: list[tuple[int, int]] = []
         self.seen_html = False
         self.has_lang = False
@@ -127,10 +137,15 @@ class _StorefrontParser(HTMLParser):
 
         element_id = values.get("id")
         if element_id:
+            self.id_counts[element_id] = self.id_counts.get(element_id, 0) + 1
             if element_id in self.ids:
                 self._add("duplicate-id", "error", line, f"id {element_id!r} was first used on line {self.ids[element_id]}")
             else:
                 self.ids[element_id] = line
+
+        labelledby = tuple(part for part in (values.get("aria-labelledby") or "").split() if part)
+        if labelledby:
+            self.aria_references.append(_AriaReference(line, tag, labelledby))
 
         if tag == "html":
             self.seen_html = True
@@ -244,9 +259,25 @@ class _StorefrontParser(HTMLParser):
                 f"document has {len(self.main_landmark_lines)} main landmarks",
             )
 
+        for reference in self.aria_references:
+            missing = sorted({ref for ref in reference.ids if self.id_counts.get(ref, 0) == 0})
+            ambiguous = sorted({ref for ref in reference.ids if self.id_counts.get(ref, 0) > 1})
+            if missing or ambiguous:
+                problems = []
+                if missing:
+                    problems.append("missing id reference(s): " + ", ".join(repr(ref) for ref in missing))
+                if ambiguous:
+                    problems.append("ambiguous id reference(s): " + ", ".join(repr(ref) for ref in ambiguous))
+                self._add(
+                    "aria-reference",
+                    "warning",
+                    reference.line,
+                    f"{reference.element} aria-labelledby has " + "; ".join(problems),
+                )
+
         for control in self.controls:
             named_by_for = bool(control.control_id and control.control_id in self.label_lines_for)
-            named_by_aria = bool(control.aria_labelledby) and all(ref in self.ids for ref in control.aria_labelledby)
+            named_by_aria = bool(control.aria_labelledby) and all(self.id_counts.get(ref, 0) == 1 for ref in control.aria_labelledby)
             if not (control.directly_named or named_by_for or named_by_aria):
                 self._add("control-name", "error", control.line, f"{control.element} has no statically resolvable accessible name")
 
@@ -261,7 +292,7 @@ class _StorefrontParser(HTMLParser):
                 )
 
         for interactive in self.interactives:
-            named_by_aria = bool(interactive.aria_labelledby) and all(ref in self.ids for ref in interactive.aria_labelledby)
+            named_by_aria = bool(interactive.aria_labelledby) and all(self.id_counts.get(ref, 0) == 1 for ref in interactive.aria_labelledby)
             named_by_content = bool("".join(interactive.text).strip())
             if not (interactive.directly_named or named_by_aria or named_by_content):
                 self._add("interactive-name", "error", interactive.line, f"{interactive.element} has no statically resolvable accessible name")

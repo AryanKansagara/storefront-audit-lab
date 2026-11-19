@@ -75,6 +75,42 @@ class AuditTests(unittest.TestCase):
         findings = audit_html(CLEAN.replace('<label for="quantity">Quantity</label><input id="quantity">', '<input aria-labelledby="missing">'))
         self.assertIn("control-name", {item.rule for item in findings})
 
+    def test_aria_labelledby_reports_missing_and_ambiguous_references_once(self):
+        document = CLEAN.replace(
+            "<main>",
+            '<main><span id="duplicate">First</span><span id="duplicate">Second</span>\n'
+            '<section aria-labelledby="missing duplicate missing">Content</section>',
+        )
+        findings = [item for item in audit_html(document) if item.rule == "aria-reference"]
+        self.assertEqual(len(findings), 1)
+        self.assertEqual(findings[0].line, 4)
+        self.assertEqual(
+            findings[0].message,
+            "section aria-labelledby has missing id reference(s): 'missing'; "
+            "ambiguous id reference(s): 'duplicate'",
+        )
+
+    def test_aria_labelledby_accepts_unique_references_declared_later(self):
+        document = CLEAN.replace(
+            "<main>",
+            '<main><section aria-labelledby="later-name">Content</section><h2 id="later-name">Details</h2>',
+        )
+        self.assertNotIn("aria-reference", {item.rule for item in audit_html(document)})
+
+    def test_ambiguous_aria_reference_does_not_name_controls_or_interactives(self):
+        document = CLEAN.replace(
+            '<label for="quantity">Quantity</label><input id="quantity">',
+            '<span id="name">First</span><span id="name">Second</span>'
+            '<input aria-labelledby="name">',
+        ).replace(
+            '<button aria-label="Open cart"></button>',
+            '<button aria-labelledby="name"></button>',
+        )
+        rules = [item.rule for item in audit_html(document)]
+        self.assertIn("control-name", rules)
+        self.assertIn("interactive-name", rules)
+        self.assertEqual(rules.count("aria-reference"), 2)
+
     def test_multiple_explicit_labels_produce_one_bounded_diagnostic(self):
         document = CLEAN.replace(
             '<label for="quantity">Quantity</label><input id="quantity">',
