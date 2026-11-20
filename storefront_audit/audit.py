@@ -5,7 +5,7 @@ from html.parser import HTMLParser
 
 
 REPORT_SCHEMA_VERSION = 2
-RULE_CATALOG_VERSION = "2026-11-19"
+RULE_CATALOG_VERSION = "2026-11-20"
 
 
 @dataclass(frozen=True)
@@ -29,6 +29,7 @@ RULES = {
         Rule("duplicate-label", "warning", "Form control has multiple explicit labels."),
         Rule("form-button-type", "warning", "Button in a form lacks a valid explicit type."),
         Rule("heading-order", "warning", "Heading levels skip a level."),
+        Rule("iframe-title", "error", "Inline frame lacks a non-empty static title."),
         Rule("image-alt", "error", "Image has no alt attribute."),
         Rule("image-dimensions", "warning", "Image lacks explicit width or height."),
         Rule("interactive-name", "error", "Link or button lacks a statically resolvable accessible name."),
@@ -173,6 +174,8 @@ class _StorefrontParser(HTMLParser):
             if (values.get("alt") or "").strip():
                 for interactive in self.active_interactives:
                     interactive.text.append(values["alt"] or "")
+        elif tag == "iframe" and not (values.get("title") or "").strip():
+            self._add("iframe-title", "error", line, "iframe is missing a non-empty title attribute")
         elif tag == "script" and self.in_head and not any(key in values for key in ("async", "defer")) and (values.get("type") or "").lower() != "module":
             self._add("blocking-script", "warning", line, "head script lacks async, defer, or type=module")
 

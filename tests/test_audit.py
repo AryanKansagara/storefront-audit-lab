@@ -46,6 +46,29 @@ class AuditTests(unittest.TestCase):
         findings = audit_html(CLEAN.replace('alt="Blue mug" width="400" height="300"', ""))
         self.assertEqual([item.rule for item in findings], ["image-alt", "image-dimensions"])
 
+    def test_iframes_require_a_non_empty_static_title(self):
+        document = CLEAN.replace(
+            "</main>",
+            '<iframe src="size-guide.html"></iframe>\n'
+            '<iframe src="reviews.html" title=" "></iframe></main>',
+        )
+        findings = [item for item in audit_html(document) if item.rule == "iframe-title"]
+        self.assertEqual(len(findings), 2)
+        self.assertEqual(
+            [item.message for item in findings],
+            [
+                "iframe is missing a non-empty title attribute",
+                "iframe is missing a non-empty title attribute",
+            ],
+        )
+
+    def test_iframe_with_a_static_title_is_accepted(self):
+        document = CLEAN.replace(
+            "</main>",
+            '<iframe src="size-guide.html" title="Product size guide"></iframe></main>',
+        )
+        self.assertNotIn("iframe-title", {item.rule for item in audit_html(document)})
+
     def test_duplicate_ids_report_original_line(self):
         findings = audit_html(CLEAN.replace("</main>", '\n<div id="quantity"></div></main>'))
         duplicate = next(item for item in findings if item.rule == "duplicate-id")
