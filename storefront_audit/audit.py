@@ -5,7 +5,7 @@ from html.parser import HTMLParser
 
 
 REPORT_SCHEMA_VERSION = 2
-RULE_CATALOG_VERSION = "2026-11-20"
+RULE_CATALOG_VERSION = "2026-11-21"
 
 
 @dataclass(frozen=True)
@@ -32,6 +32,7 @@ RULES = {
         Rule("iframe-title", "error", "Inline frame lacks a non-empty static title."),
         Rule("image-alt", "error", "Image has no alt attribute."),
         Rule("image-dimensions", "warning", "Image lacks explicit width or height."),
+        Rule("image-dimension-values", "warning", "Image width or height is not a positive integer."),
         Rule("interactive-name", "error", "Link or button lacks a statically resolvable accessible name."),
         Rule("link-destination", "warning", "Link uses an empty, placeholder, or script-executing destination."),
         Rule("main-landmark", "warning", "Document has no statically detectable main landmark."),
@@ -77,6 +78,16 @@ class _AriaReference:
     line: int
     element: str
     ids: tuple[str, ...]
+
+
+def _is_positive_ascii_integer(value: str) -> bool:
+    normalized = value.strip()
+    return (
+        bool(normalized)
+        and normalized.isascii()
+        and normalized.isdigit()
+        and any(character != "0" for character in normalized)
+    )
 
 
 class _StorefrontParser(HTMLParser):
@@ -171,6 +182,20 @@ class _StorefrontParser(HTMLParser):
                 self._add("image-alt", "error", line, "image is missing an alt attribute")
             if not values.get("width") or not values.get("height"):
                 self._add("image-dimensions", "warning", line, "image is missing explicit width or height")
+            else:
+                invalid_dimensions = [
+                    name
+                    for name in ("width", "height")
+                    if not _is_positive_ascii_integer(values[name] or "")
+                ]
+                if invalid_dimensions:
+                    names = ", ".join(invalid_dimensions)
+                    self._add(
+                        "image-dimension-values",
+                        "warning",
+                        line,
+                        f"image dimension attributes must be positive integers: {names}",
+                    )
             if (values.get("alt") or "").strip():
                 for interactive in self.active_interactives:
                     interactive.text.append(values["alt"] or "")

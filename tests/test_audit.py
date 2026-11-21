@@ -46,6 +46,33 @@ class AuditTests(unittest.TestCase):
         findings = audit_html(CLEAN.replace('alt="Blue mug" width="400" height="300"', ""))
         self.assertEqual([item.rule for item in findings], ["image-alt", "image-dimensions"])
 
+    def test_image_dimension_values_require_positive_ascii_integers(self):
+        document = CLEAN.replace(
+            '<img src="item.jpg" alt="Blue mug" width="400" height="300">',
+            '<img src="zero.jpg" alt="Zero" width="0" height="200">\n'
+            '<img src="invalid.jpg" alt="Invalid" width="auto" height="-1">\n'
+            '<img src="unicode.jpg" alt="Unicode" width="１２" height="20">',
+        )
+        findings = [item for item in audit_html(document) if item.rule == "image-dimension-values"]
+        self.assertEqual(
+            [item.message for item in findings],
+            [
+                "image dimension attributes must be positive integers: width",
+                "image dimension attributes must be positive integers: width, height",
+                "image dimension attributes must be positive integers: width",
+            ],
+        )
+
+    def test_image_dimension_values_accept_whitespace_and_leading_zeroes(self):
+        document = CLEAN.replace('width="400" height="300"', 'width=" 00400 " height="00300"')
+        self.assertNotIn("image-dimension-values", {item.rule for item in audit_html(document)})
+
+    def test_missing_image_dimension_does_not_duplicate_value_warning(self):
+        document = CLEAN.replace('width="400" height="300"', 'width="0"')
+        rules = [item.rule for item in audit_html(document)]
+        self.assertIn("image-dimensions", rules)
+        self.assertNotIn("image-dimension-values", rules)
+
     def test_iframes_require_a_non_empty_static_title(self):
         document = CLEAN.replace(
             "</main>",
